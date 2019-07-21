@@ -97,6 +97,250 @@ Each result returned from rummy has the following JSON syntax:
 
 Note that each of the operations below require file read and write operations, encryption and decryption, and processing. Hence, you should try to reduce the number of commands you execute. For instance, if you want to remove three pirates from the crew, remove all three at once (faster) instead of one at a time (slower).
 
+#### Test
+
+Flag: -wake or -w
+
+Parameters: None
+
+Return: Standard message Example: >> rummy -wake
+
+This is a simple command to test if your interface is working. It doesn’t do anything but print a statement.
+
+#### Gather
+
+Flag: -gather or -g
+
+Parameters: None or the number of clues to generate
+
+Return: Standard message
+
+Example: `rummy -gather <number>`
+
+This will instruct the Captain to collect all the clues he can find before looking for a crew. This takes the images from data/maps and preprocesses them into usable clues saved in data/clues. The command may take a very long time to execute, depending on the number of images you selected and the number of processor cores available. This command only has to be executed once, and then you can reuse the clues for all your testing purposes. You can create your own or extend the current datatset. The parameter indicates the number of clues to generate. If no parameter is provided, it will use all 20 images. For testing purposes, use only one image, since this is faster and doesn’t waste your time. For your convenience, pregenerated clues can be found in data/clues.
+
+#### Unlock
+
+Flag: -unlock or -u 
+
+Parameters: None
+
+Return: Standard message 
+
+Example: `rummy -unlock`
+
+Since this is a distributed system, different processes might try to access files at the same time, causing a collision or inconsistency. For this reason files are locked allowing only one process to access them at a time. If you execute rummy in a normal way, all locks are released. However, if your program crashes or you exit it with Ctrl-C, some locks may not be released, causing rummy to wait indefinitely on the next execution. In such a case you can remove all locks by executing the unlock command.
+
+#### Prepare
+
+Flag: -prepare or -p 
+
+Parameters: None
+
+Return: Standard message 
+
+Example: `rummy -prepare`
+
+This will instruct the Captain to visit the pub on the port to signup crew members. This command has to be executed only once before your computation commences and may take some time to execute.
+
+#### Add
+
+Flag: -add or -a
+
+Parameters: None or the number of members to sign up 
+
+Return: List of new crew member IDs
+
+Example: `rummy -add <number>`
+
+This will instruct the Captain to add new pirates to the crew. The parameter indicates the number of pirates to add and defaults to one if omitted. A list of IDs for the new crew members are returned, which you will use at a later stage. Note that adding new crew members after being shipped out (refer to the shipout command), adds an additional time penalty to the execution. Hence, try to add all your crew members before shipping out. Note that a list is returned, even if only one member was added.
+
+#### Remove
+
+Flag: -remove or -r
+
+Parameters: The IDs of the crew members to remove
+
+Return: Standard message
+
+Example:
+
+```
+rummy -remove "PirateID"
+rummy -remove '["PirateID1", "PirateID2", "PirateID3"]'
+```
+
+This will instruct the Captain to remove pirates from the crew. Removing members does not introduce an extra time penalty, even when shipped out. You can either pass a single ID or a list of IDs. Remember to put the ID or the list of IDs in quotation marks.
+
+#### Ship Out
+
+Flag: -shipout or -s 
+
+Parameters: None
+
+Return: Standard message 
+
+Example: >> rummy -shipout
+
+This will instruct the Captain to ship out and start searching for the treasure. After this point your distributed processing starts and any new crew members added will induce and additional time penalty.
+
+#### Clues
+
+Flag: -clues or -c
+
+Parameters: None or the ID of a pirate
+
+Return: List of clues
+
+Example:
+```
+rummy -clues
+rummy -clues "PirateID"
+```
+
+This will instruct the Captain to hand out clues to individual crew members to go looking for the treasure. If no parameter is specified, a group of clues is returned. This list has objects, one for each pirate currently on the crew containing the pirate’s ID and a list of clues. Each clue has an ID and a string of data that must be processed later on. If you specify a pirate’s ID for the command above, only a single clue object is returned, containing the clue ID and data for the specific pirate. Note that retrieving clues is time consuming and it is advised to retrieve all the clues at once (faster) instead of a single clue at a time (slower). Also note that although the individual clues are assigned to a specific pirate, any pirate can process the clues. The clues are simply linked to a pirate so that you can keep track of constant failures due to corrupt pirates (which you then might want to remove). Once a clue has been released with the above command, it will not be released again. Hence, you can call the command sequentially with a pirate’s ID and a new clue is released on every iteration until none are left.
+
+#### Verify
+
+Flag: -verify or -v
+
+Parameters: A single clue or a list of clues
+
+Return: Standard message on success or list of failed clues
+
+Example:
+
+```
+rummy -verify '{"id":"PirateID", "data":[{"id":"ClueID", "key":"ClueKey"}]}'
+
+rummy -verify '[{"id":"PirateID1", "data":[{"id":"ClueID1", "key":"ClueKey1"},
+{"id":"ClueID2", "key":"ClueKey2"}]}, {"id":"PirateID2", "data": [{"id":"ClueID3", "key":"ClueKey3"}, {"id":"ClueID4", "key":"ClueKey4"}]}]'
+```
+
+This will instruct the Captain to verify if the pirate that solved the clues and checked the island for the treasure is talking the truth. You can pass in the clues from a single pirate or a list of clues from different pirates. Each clue contains the clue ID and the key generated by your algorithm. Again, any solved clue can be passed in under any pirate’s ID. For instance, if a clue was released for pirate 1, pirate 2 may solve the clue, and pirate 3 may verify the key with the Captain. If all keys are successfully verified, a standard message is returned. Otherwise if some keys are incorrect, a list of failed clues is returned in the same format as the clues command. These clues have to be run through your algorithm again and the generated keys have to be reverified. This process continues until all keys for a given map are successfully verified. Once all keys are accepted, the next map is automatically unlocked and the new clues can be retrieved with the clues command and then verified with the verify command. Once all clues from all maps are verified, the treasure hunt is over. The final result will contain and additional attribute finished. Again, verifying keys is time-consuming and it is better to verify all at once, instead of one key at a time.
+
+### Solving Clues
+
+Each pirate or distributed agent has to solve clues. A clue is a string of characters that has to be scrambled in a certain way in order to get a key. This key is given to the captain for verification. Clues are solved through three main procedures, namely dig in the sand, search the river, and crawl into the cave. Each of these procedures require certain tools which are smaller operations, namely shovel, rope, torch, and bucket. These operations are discussed below. The input string is referred to as clue.
+
+#### Shovel
+
+```
+Example Input: 40938FC0CB3F48B98C7546AD05CC7434
+
+Example Output: 00333444445567788899ABBCCCCCDFF0A2B3C
+```
+
+1. Sort clue in ascending order. Digits should come before characters.
+
+2. If the first character in clue is a digit, append the string ”0A2B3C” to clue. Else if the first character is alphabetic, append the string ”1B2C3D” to clue.
+
+3. Remove the first character from clue.
+
+#### Rope
+
+```
+Example Input: 40938FC0CB3F48B98C7546AD05CC7434
+
+Example Output: A555BC25215CAB15B2ABA5Cd5B22AA5A
+```
+
+For each character x in clue: 1. If x is a digit:
+
+(a) If xmod3is0,changexto”5”.
+
+(b) Elseif xmod3is1,changexto”A”. (c) Elseif xmod3is2,changexto”B”.
+
+(d) Else leave x as is. 2. Else if x is alphabetic:
+
+(a) Convert x to hexadecimal and subtract 10. Hence ”A” becomes 0, ”B” becomes 1, up to ”F” which is 5.
+
+(b) If xmod5is0,changexto”C”.
+
+(c) Elseif xmod5is1,changexto”1”.
+
+(d) Elseif xmod5is2,changexto”2”.
+
+(e) Else leave x as is.
+
+#### Torch
+
+```
+Example Input: 40938FC0CB3F48B98C7546AD05CC7434
+
+Example Output: F9E8D701
+```
+
+1. Set x to the sum of all digits in clue.
+
+2. If x is less than 100, square x.
+
+3. Convert x to a string.
+
+4. If the string length of x is less than 10, remove the first character from x and prepend ”F9E8D7” to it.
+
+5. Else if the string length of x is greater equal to 10, remove the first 6 characters from x and append ”A1B2C3” to it.
+
+#### Bucket
+
+```
+Example Input: 40938FC0CB3F48B98C7546AD05CC7434
+
+Example Output: 80766FC0CB6F86B76C51084AD010CC5868
+```
+
+For each character x in clue: 1. If x is a digit:
+
+(a) If x is greater than 5, subtract 2 from it.
+
+(b) Else if x is less equal to 5, multiply it by 2. 2. Else leave x as is.
+
+#### Dig In The Sand
+
+```
+Example Input: 40938FC0CB3F48B98C7546AD05CC7434 
+
+Example Output: 000000002222222...CCCCCCDFF0A2B3C
+
+Example Note: Due to the length of the output string, only the first and last parts are shown.
+```
+
+Dig in the sand for the treasure by using the shovel 100 times. Then use the bucket 200 times to get rid of the ground water. Then use the shovel another 100 times.
+
+
+#### Search The River
+
+```
+Example Input: 40938FC0CB3F48B98C7546AD05CC7434
+
+Example Output: 604044FC0CB4F64B404C806068AD060CC80646
+```
+
+Search the river for the treasure by using the bucket 200 times to empty the river.
+
+#### Crawl Into The Cave
+
+```
+Example Input: 40938FC0CB3F48B98C7546AD05CC7434
+
+Example Output: F9E8D7681
+```
+
+Search the cave for the treasure by using the rope 200 times and then lighting up the torch 100 times.
+
+
+#### Solve The Clue
+
+```
+Example Input: 40938FC0CB3F48B98C7546AD05CC7434
+
+Example Output: 6D4AD5F3CB5DD79A678D397CDB9AF434
+```
+
+In order to solve the clue, the pirate has to first dig in the sand, then search the river, followed by crawling into the cave. The key is retrieved by calculating the MD5 hash of the result from the previous three actions and converting the hash to uppercase letters (digits stay the same).
+
+
+
 
 
 
